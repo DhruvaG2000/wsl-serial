@@ -115,6 +115,16 @@ impl Picker {
         })
     }
 
+    fn select_path(&mut self, path: &Path) {
+        if let Some(index) = self
+            .rows
+            .iter()
+            .position(|row| matches!(row, Row::Linux(port) if port.path == path))
+        {
+            self.cursor.select(Some(index));
+        }
+    }
+
     fn suggest_port(&mut self, device: &Device, exclude: &[PathBuf]) {
         let Some(path) =
             unique_match(self.linux_ports(), device.usb_id, exclude).map(|port| port.path.clone())
@@ -125,11 +135,7 @@ impl Picker {
             );
             return;
         };
-        let index = self
-            .rows
-            .iter()
-            .position(|row| matches!(row, Row::Linux(port) if port.path == path));
-        self.cursor.select(index);
+        self.select_path(&path);
         self.notice = format!(
             "Possible {} match at {}. Verify the path, then press Enter.",
             device.com,
@@ -184,6 +190,9 @@ enum Action {
 pub fn run(extra: Option<&Path>, baud: u32) -> Result<(), String> {
     let mut picker = Picker::new(baud);
     picker.reload(extra);
+    if let Some(path) = extra.and_then(|path| path.canonicalize().ok()) {
+        picker.select_path(&path);
+    }
     loop {
         let action =
             choose(&mut picker, extra).map_err(|error| format!("Terminal error: {error}"))?;

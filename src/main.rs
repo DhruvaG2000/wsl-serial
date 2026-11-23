@@ -1,6 +1,7 @@
 mod minicom;
 mod ports;
 mod ui;
+mod windows;
 
 use std::{env, ffi::OsString, path::PathBuf, process::ExitCode};
 
@@ -9,7 +10,7 @@ wsl-com-picker — choose a serial port and open Minicom
 
 Usage: wsl-com-picker [--list] [--device PATH] [--baud RATE]
 
-  --list         Print detected devices without opening the picker
+  --list         Print Linux and Windows ports without opening the picker
   --device PATH  Include an explicit Linux serial or PTY device
   --baud RATE    Set initial baud rate (default 115200)
   --version      Print the picker version
@@ -91,6 +92,20 @@ fn run() -> Result<(), String> {
                         ui::plain(&port.label),
                         ui::plain(&port.detail)
                     );
+                }
+                match windows::scan() {
+                    Ok(devices) => {
+                        for device in devices {
+                            println!(
+                                "{}\t{}\tUSB {}\t{}",
+                                device.com,
+                                device.state.label(),
+                                device.bus,
+                                ui::plain(&device.description)
+                            );
+                        }
+                    }
+                    Err(error) => eprintln!("wsl-com-picker: {}", ui::plain(&error)),
                 }
             } else {
                 minicom::require_tty().map_err(|error| error.to_string())?;

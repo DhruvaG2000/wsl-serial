@@ -5,12 +5,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UsbId(pub u16, pub u16);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Port {
     pub path: PathBuf,
     pub label: String,
     pub detail: String,
     pub readable_writable: bool,
+    pub usb_id: Option<UsbId>,
 }
 
 pub fn scan(extra: Option<&Path>) -> io::Result<Vec<Port>> {
@@ -31,12 +35,13 @@ pub fn scan(extra: Option<&Path>) -> io::Result<Vec<Port>> {
         if !is_character_device(&path) {
             continue;
         }
-        let product = usb_product(&tty).unwrap_or_else(|| match kind {
+        let (usb_id, product) = usb_info(&tty);
+        let product = product.unwrap_or_else(|| match kind {
             0 => "USB CDC serial".into(),
             1 => "USB serial adapter".into(),
             _ => "Hardware UART".into(),
         });
-        devices.push((key, new_port(path, product)));
+        devices.push((key, new_port(path, product, usb_id)));
     }
     devices.sort_by_key(|(key, _)| *key);
     let mut ports: Vec<_> = devices.into_iter().map(|(_, port)| port).collect();
@@ -48,16 +53,18 @@ pub fn scan(extra: Option<&Path>) -> io::Result<Vec<Port>> {
         ports.push(new_port(
             path,
             format!("Explicit device {}", extra.display()),
+            None,
         ));
     }
     Ok(ports)
 }
 
-fn new_port(path: PathBuf, detail: String) -> Port {
+fn new_port(path: PathBuf, detail: String, usb_id: Option<UsbId>) -> Port {
     let label = path.display().to_string();
     Port {
         label,
         detail,
+        usb_id,
         readable_writable: can_access(&path),
         path,
     }
@@ -102,13 +109,24 @@ fn active_uart(tty: &Path) -> bool {
         .is_some_and(|kind| kind != 0)
 }
 
-fn usb_product(tty: &Path) -> Option<String> {
-    let path = tty.join("device").canonicalize().ok()?;
-    path.ancestors().find_map(|parent| {
-        let product = fs::read_to_string(parent.join("product")).ok()?;
-        let trimmed = product.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_owned())
-    })
+fn usb_info(tty: &Path) -> (Option<UsbId>, Option<String>) {
+    let Ok(path) = tty.join("device").canonicalize() else {
+        return (None, None);
+    };
+    path.ancestors()
+        .find_map(|parent| {
+            let read_id = |name| {
+                let text = fs::read_to_string(parent.join(name)).ok()?;
+                u16::from_str_radix(text.trim(), 16).ok()
+            };
+            let id = UsbId(read_id("idVendor")?, read_id("idProduct")?);
+            let product = fs::read_to_string(parent.join("product"))
+                .ok()
+                .map(|text| text.trim().to_owned())
+                .filter(|text| !text.is_empty());
+            Some((Some(id), product))
+        })
+        .unwrap_or_default()
 }
 
 #[cfg(test)]

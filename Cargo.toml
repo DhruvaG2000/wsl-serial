@@ -1,0 +1,13 @@
+[package]
+name = "wsl-com-picker"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Pick a serial port in WSL and open it in Minicom"
+publish = false
+
+[dependencies]
+crossterm = "0.29"
+libc = "0.2"
+ratatui = { version = "0.30.0", default-features = false, features = ["crossterm"] }
+tempfile = "3"
